@@ -2,6 +2,10 @@ extern crate base64;
 extern crate crypto;
 extern crate hex;
 
+mod hash;
+pub mod bcrypt;
+pub mod pbkdf2;
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -30,15 +34,39 @@ mod tests {
 
     #[test]
     fn crypto_bcrypt_encrypt() {
+        let password = "very secured password";
         let salt = [0u8; 16];
-        let pass = "aaaaaakjhjhkgughlhk";
-        let mut output = vec![0u8; 24];
-        crypto::bcrypt::bcrypt(10, &salt, pass.as_bytes(), &mut output);
+        let rounds = 10;
+        let mut output = vec![0u8; 32];
 
-        assert_eq!("rKUp6LVuRNTVnC2rTniI//jtBsSvLlYm", base64::encode(&output));
+        crypto::bcrypt_pbkdf::bcrypt_pbkdf(password.as_bytes(), &salt, rounds, &mut output);
+
+        assert_eq!("7Dx4QJ551DqRoPToSNyMGn4yEGwSB1/kbC9MLygEZks=", base64::encode(&output));
     }
 
     #[test]
     fn crypto_bcrypt_verify() {
+        let hash = "7Dx4QJ551DqRoPToSNyMGn4yEGwSB1/kbC9MLygEZks=";
+        let password = "very secured password";
+        let salt = [0u8; 16];
+        let rounds = 10;
+        let mut output = vec![0u8; 32];
+
+        crypto::bcrypt_pbkdf::bcrypt_pbkdf(password.as_bytes(), &salt, rounds, &mut output);
+
+        assert_eq!(hash, base64::encode(&output));
+    }
+
+    #[test]
+    fn crypto_pbkdf2_encrypt() {
+        let password = "very secured password";
+        let salt = [0u8; 16];
+        let rounds = 10;
+        let mut output = vec![0u8; 32];
+
+        let mut mac = crypto::hmac::Hmac::new(crypto::sha2::Sha256::new(), password.as_bytes());
+        crypto::pbkdf2::pbkdf2(&mut mac, &salt, rounds, &mut output);
+
+        assert_eq!("VcZDcja5mTzJ02mP5YBLDx88n7hVcFIuOCqj/qXBMkk=", base64::encode(&output));
     }
 }
