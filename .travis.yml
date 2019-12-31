@@ -1,0 +1,19 @@
+language: rust
+cache: cargo
+rust:
+  - nightly
+os:
+  - linux
+  - osx
+
+env:
+  # Ensure that we build without warnings.
+  - CARGO_FLAGS="--features 'strict'"
+
+script:
+  - cargo test --manifest-path=Cargo.toml
+  - cargo test --release --manifest-path=Cargo.toml
+
+notifications:
+  fast_finish: true
+  email: false
