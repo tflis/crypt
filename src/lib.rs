@@ -2,9 +2,9 @@ extern crate base64;
 extern crate crypto;
 extern crate hex;
 
-mod hash;
-pub mod bcrypt;
-pub mod pbkdf2;
+mod cipher;
+mod error;
+mod hasher;
 
 #[cfg(test)]
 mod tests {
@@ -41,7 +41,10 @@ mod tests {
 
         crypto::bcrypt_pbkdf::bcrypt_pbkdf(password.as_bytes(), &salt, rounds, &mut output);
 
-        assert_eq!("7Dx4QJ551DqRoPToSNyMGn4yEGwSB1/kbC9MLygEZks=", base64::encode(&output));
+        assert_eq!(
+            "7Dx4QJ551DqRoPToSNyMGn4yEGwSB1/kbC9MLygEZks=",
+            base64::encode(&output)
+        );
     }
 
     #[test]
@@ -67,6 +70,9 @@ mod tests {
         let mut mac = crypto::hmac::Hmac::new(crypto::sha2::Sha256::new(), password.as_bytes());
         crypto::pbkdf2::pbkdf2(&mut mac, &salt, rounds, &mut output);
 
-        assert_eq!("VcZDcja5mTzJ02mP5YBLDx88n7hVcFIuOCqj/qXBMkk=", base64::encode(&output));
+        assert_eq!(
+            "VcZDcja5mTzJ02mP5YBLDx88n7hVcFIuOCqj/qXBMkk=",
+            base64::encode(&output)
+        );
     }
 }

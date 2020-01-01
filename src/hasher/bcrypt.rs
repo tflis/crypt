@@ -1,38 +1,25 @@
 extern crate crypto;
 
-use crypto::hmac::Hmac;
-use crypto::pbkdf2::pbkdf2;
-use crypto::sha2::Sha256;
+use crypto::bcrypt_pbkdf::bcrypt_pbkdf;
 
-use crate::hash::IHasher;
+use crate::hasher::IHasher;
 
-pub struct PbkdfHasher {
+pub struct BcryptHasher {
     rounds: u32,
-    salt:   Vec<u8>,
+    salt: Vec<u8>,
 }
 
-impl PbkdfHasher {
-    #[warn(dead_code)]
-    fn new(rounds: u32, salt: &[u8]) -> PbkdfHasher {
-        PbkdfHasher { rounds: rounds, salt: salt.to_vec() }
-    }
-}
-
-impl IHasher for PbkdfHasher {
+impl IHasher for BcryptHasher {
     fn encrypt(&self, password: &str) -> Vec<u8> {
         let mut output = vec![0u8; 32];
-        let mut mac = Hmac::new(Sha256::new(), password.as_bytes());
-
-        pbkdf2(&mut mac, &self.salt, self.rounds, &mut output);
+        bcrypt_pbkdf(password.as_bytes(), &self.salt, self.rounds, &mut output);
 
         output.to_vec()
     }
 
     fn verify(&self, encrypted: &[u8], password: &str) -> bool {
         let mut output = vec![0u8; 32];
-        let mut mac = Hmac::new(Sha256::new(), password.as_bytes());
-
-        pbkdf2(&mut mac, &self.salt, self.rounds, &mut output);
+        bcrypt_pbkdf(password.as_bytes(), &self.salt, self.rounds, &mut output);
 
         output == encrypted
     }
@@ -42,9 +29,19 @@ impl IHasher for PbkdfHasher {
     }
 }
 
+impl BcryptHasher {
+    #[allow(dead_code)]
+    fn new(rounds: u32, salt: &[u8]) -> BcryptHasher {
+        BcryptHasher {
+            rounds: rounds,
+            salt: salt.to_vec(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::hash::IHasher;
+    use crate::hasher::IHasher;
 
     #[test]
     fn encode_verify() {
@@ -54,7 +51,7 @@ mod tests {
         let password = "password";
         let password2 = "password2";
 
-        let mut hasher = super::PbkdfHasher::new(rounds, &salt);
+        let mut hasher = super::BcryptHasher::new(rounds, &salt);
 
         let hash = hasher.encrypt(password);
 
