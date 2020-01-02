@@ -74,3 +74,65 @@ impl ICipher for ECBCipher {
         self.salt = salt.to_vec();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::cipher::ICipher;
+    use rand::Rng;
+
+    #[test]
+    fn ecb_encrypt_decrypt_128() {
+        let secret = rand::thread_rng().gen::<[u8; 16]>();
+        let salt = rand::thread_rng().gen::<[u8; 16]>();
+
+        let data = "this is a data that will be encrypted";
+
+        let cipher = super::ECBCipher::new(&secret, &salt);
+        let crypted_data = cipher.encrypt(data).unwrap();
+        let uncrypted_data = cipher.decrypt(&crypted_data).unwrap();
+
+        assert_eq!(data, uncrypted_data);
+    }
+
+    #[test]
+    fn ecb_encrypt_decrypt_192() {
+        let secret = rand::thread_rng().gen::<[u8; 24]>();
+        let salt = rand::thread_rng().gen::<[u8; 24]>();
+
+        let data = "this is a data that will be encrypted";
+
+        let cipher = super::ECBCipher::new(&secret, &salt);
+        let crypted_data = cipher.encrypt(data).unwrap();
+        let uncrypted_data = cipher.decrypt(&crypted_data).unwrap();
+
+        assert_eq!(data, uncrypted_data);
+    }
+
+    #[test]
+    fn ecb_encrypt_decrypt_256() {
+        let secret = rand::thread_rng().gen::<[u8; 32]>();
+        let salt = rand::thread_rng().gen::<[u8; 32]>();
+
+        let data = "this is a data that will be encrypted";
+
+        let cipher = super::ECBCipher::new(&secret, &salt);
+        let crypted_data = cipher.encrypt(data).unwrap();
+        let uncrypted_data = cipher.decrypt(&crypted_data).unwrap();
+
+        assert_eq!(data, uncrypted_data);
+    }
+
+    #[test]
+    fn ecb_encrypt_decrypt_other() {
+        let secret = rand::thread_rng().gen::<[u8; 30]>();
+        let salt = rand::thread_rng().gen::<[u8; 10]>();
+
+        let data = "this is a data that will be encrypted";
+
+        let cipher = super::ECBCipher::new(&secret, &salt);
+        let crypted_data = cipher.encrypt(data).unwrap();
+        let uncrypted_data = cipher.decrypt(&crypted_data).unwrap();
+
+        assert_eq!(data, uncrypted_data);
+    }
+}
