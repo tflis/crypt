@@ -3,6 +3,7 @@ extern crate crypto;
 extern crate hex;
 
 mod cipher;
+mod config;
 mod error;
 mod hasher;
 
