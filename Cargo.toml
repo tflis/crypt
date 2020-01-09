@@ -1,5 +1,7 @@
 [package]
-name = "crypt"
+name = "crypt-config"
+description = "A crypt module that encrypt/decrypt json data based on the configuration. This might be used as a layer before saving data in Mongo DB or after fetching the data from the DB in order to decrypt them."
+license = "MIT"
 version = "0.1.0"
 authors = ["Tomasz Flis <tflis84@gmail.com>"]
 edition = "2018"
@@ -12,3 +14,5 @@ hex = "^0.4.0"
 rand = "0.7.2"
 rust-crypto = "^0.2"
 openssl = "0.10.26"
+serde = { version = "^1.0", features = ["derive"] }
+serde_json = "^1.0"

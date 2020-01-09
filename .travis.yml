@@ -14,7 +14,6 @@ matrix:
     - rust: nightly
 os:
   - linux
-  - osx
 
 env:
   # Ensure that we build without warnings.

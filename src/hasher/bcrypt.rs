@@ -31,7 +31,7 @@ impl IHasher for BcryptHasher {
 
 impl BcryptHasher {
     #[allow(dead_code)]
-    fn new(rounds: u32, salt: &[u8]) -> BcryptHasher {
+    pub fn new(rounds: u32, salt: &[u8]) -> BcryptHasher {
         BcryptHasher {
             rounds: rounds,
             salt: salt.to_vec(),
