@@ -16,6 +16,13 @@ pub enum CryptError {
     OpenSSL(openssl::error::ErrorStack),
     HasherNotFound(String),
     CipherNotFound(String),
+    UnsupportedConfigVersion(),
+    DuplicationCipherConfigVersion(String),
+    DuplicationHasherConfigVersion(String),
+    UnsupportedCipherAlgorithm(String),
+    UnsupportedHasherAlgorithm(String),
+    BadIterationCount(),
+    InvalidDocument(String),
     // ...
 }
 
@@ -49,6 +56,23 @@ impl Display for CryptError {
             CryptError::CipherNotFound(ref algorithm) => {
                 write!(f, "Cipher algorithm: {} not implemented", algorithm)
             }
+            CryptError::UnsupportedConfigVersion() => {
+                write!(f, "Crypt config version not supported")
+            }
+            CryptError::DuplicationCipherConfigVersion(ref version) => {
+                write!(f, "Duplication of cipher config version: {}", version)
+            }
+            CryptError::DuplicationHasherConfigVersion(ref version) => {
+                write!(f, "Duplication of hasher config version: {}", version)
+            }
+            CryptError::UnsupportedCipherAlgorithm(ref algorithm) => {
+                write!(f, "Unsupported cipher algorithm: {}", algorithm)
+            }
+            CryptError::UnsupportedHasherAlgorithm(ref algorithm) => {
+                write!(f, "Unsupported hasher algorithm: {}", algorithm)
+            }
+            CryptError::BadIterationCount() => write!(f, "Bad iteration count"),
+            CryptError::InvalidDocument(ref reason) => write!(f, "Invalid document: {}", reason),
         }
     }
 }
@@ -63,6 +87,21 @@ impl error::Error for CryptError {
             CryptError::OpenSSL(ref err) => err.description(),
             CryptError::HasherNotFound(ref _algorithm) => "Hasher algorithm not implemented",
             CryptError::CipherNotFound(ref _algorithm) => "Cipher algorithm not implemented",
+            CryptError::UnsupportedConfigVersion() => "Crypt config version not supported",
+            CryptError::DuplicationCipherConfigVersion(ref _version) => {
+                "Duplication of cipher config version"
+            }
+            CryptError::DuplicationHasherConfigVersion(ref _version) => {
+                "Duplication of hasher config version"
+            }
+            CryptError::UnsupportedCipherAlgorithm(ref _algorithm) => {
+                "Unsupported cipher algorithm"
+            }
+            CryptError::UnsupportedHasherAlgorithm(ref _algorithm) => {
+                "Unsupported hasher algorithm"
+            }
+            CryptError::BadIterationCount() => "Bad iteration count",
+            CryptError::InvalidDocument(ref _reason) => "Invalid document",
         }
     }
 
@@ -73,8 +112,7 @@ impl error::Error for CryptError {
             CryptError::Str(ref err) => Some(err),
             CryptError::Json(ref err) => Some(err),
             CryptError::OpenSSL(ref err) => Some(err),
-            CryptError::HasherNotFound(ref _algorithm) => None,
-            CryptError::CipherNotFound(ref _algorithm) => None,
+            _ => None,
         }
     }
 }
