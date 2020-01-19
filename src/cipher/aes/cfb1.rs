@@ -13,7 +13,7 @@ pub struct CFB1Cipher {
 
 impl CFB1Cipher {
     #[allow(dead_code)]
-    fn new(secret: &[u8], salt: &[u8]) -> CFB1Cipher {
+    pub fn new(secret: &[u8], salt: &[u8]) -> CFB1Cipher {
         let mut secret = secret.to_vec();
         let mut salt = salt.to_vec();
         let cipher = match secret.len() {
@@ -21,7 +21,7 @@ impl CFB1Cipher {
             24 => Cipher::aes_192_cfb1(),
             32 => Cipher::aes_256_cfb1(),
             _ => {
-                println!("[WARNING] incorrect secret length. Expected 16, 24 or 32, got {}. Secret will be resized to 32 with value 0.", secret.len());
+                println!("[crypt-config][WARNING] incorrect secret length. Expected 16, 24 or 32, got {}. Secret will be resized to 32 with value 0.", secret.len());
                 secret.resize(32, 0);
                 Cipher::aes_256_cfb1()
             }
@@ -70,8 +70,8 @@ impl ICipher for CFB1Cipher {
         Ok(String::from_utf8(plain)?)
     }
 
-    fn set_salt(&mut self, salt: &[u8]) {
-        self.salt = salt.to_vec();
+    fn get_salt(&self) -> &Vec<u8> {
+        &self.salt
     }
 }
 
