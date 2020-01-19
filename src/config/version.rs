@@ -7,6 +7,7 @@ use crate::error::CryptResult;
 
 #[derive(Serialize, Deserialize)]
 struct Version {
+    //    #[serde(default, skip_serializing)]
     version: String,
 }
 
@@ -26,6 +27,20 @@ mod tests {
         let json = r#"
         {
             "version": "1.0.0"
+        }"#;
+
+        let out = get_config_version(&json).unwrap();
+
+        assert_eq!(ver, out);
+    }
+
+    #[test]
+    fn allow_unknown_fields() {
+        let ver = "1.0.0";
+        let json = r#"
+        {
+            "version": "1.0.0",
+            "unknown": "0.0.0"
         }"#;
 
         let out = get_config_version(&json).unwrap();

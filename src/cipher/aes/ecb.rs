@@ -13,7 +13,7 @@ pub struct ECBCipher {
 
 impl ECBCipher {
     #[allow(dead_code)]
-    fn new(secret: &[u8], salt: &[u8]) -> ECBCipher {
+    pub fn new(secret: &[u8], salt: &[u8]) -> ECBCipher {
         let mut secret = secret.to_vec();
         let mut salt = salt.to_vec();
         let cipher = match secret.len() {
@@ -21,7 +21,7 @@ impl ECBCipher {
             24 => Cipher::aes_192_ecb(),
             32 => Cipher::aes_256_ecb(),
             _ => {
-                println!("[WARNING] incorrect secret length. Expected 16, 24 or 32, got {}. Secret will be resized to 32 with value 0.", secret.len());
+                println!("[crypt-config][WARNING] incorrect secret length. Expected 16, 24 or 32, got {}. Secret will be resized to 32 with value 0.", secret.len());
                 secret.resize(32, 0);
                 Cipher::aes_256_ecb()
             }
@@ -70,8 +70,8 @@ impl ICipher for ECBCipher {
         Ok(String::from_utf8(plain)?)
     }
 
-    fn set_salt(&mut self, salt: &[u8]) {
-        self.salt = salt.to_vec();
+    fn get_salt(&self) -> &Vec<u8> {
+        &self.salt
     }
 }
 

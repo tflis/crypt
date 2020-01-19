@@ -11,5 +11,5 @@ pub trait ICipher {
     fn decrypt(&self, data: &[u8]) -> CryptResult<String>;
     fn decrypt_with_salt(&self, data: &[u8], salt: &[u8]) -> CryptResult<String>;
 
-    fn set_salt(&mut self, salt: &[u8]);
+    fn get_salt(&self) -> &Vec<u8>;
 }

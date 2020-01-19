@@ -4,6 +4,7 @@ extern crate hex;
 
 mod cipher;
 mod config;
+mod convert;
 mod error;
 mod hasher;
 
