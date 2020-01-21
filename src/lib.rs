@@ -3,9 +3,9 @@ extern crate crypto;
 extern crate hex;
 
 mod cipher;
-mod config;
-mod convert;
-mod error;
+pub mod config;
+pub mod convert;
+pub mod error;
 mod hasher;
 
 #[cfg(test)]
