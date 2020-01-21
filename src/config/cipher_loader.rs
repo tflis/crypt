@@ -112,7 +112,7 @@ mod tests {
         let version = get_config_version(&content).unwrap();
         let cipher_loader = get_cipher_loader(&version);
 
-        cipher_loader(config.as_mut(), &content).unwrap();
+        cipher_loader(&mut config, &content).unwrap();
 
         assert!(config.is_cipher_exist("email"));
         assert_eq!("2.1", config.get_cipher_latest_version("email"));

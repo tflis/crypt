@@ -1,15 +1,17 @@
-use serde_json::{json, Map, Number, Value};
 use std::str::FromStr;
+use std::sync::{Arc, RwLock};
+
+use serde_json::{json, Map, Number, Value};
 
 use crate::config::Config;
 use crate::error::{CryptError, CryptResult};
 
-#[allow(dead_code)]
-pub fn encrypt_document(config: &Config, json: &str) -> CryptResult<String> {
+pub fn encrypt_document(config: &Arc<RwLock<Box<Config>>>, json: &str) -> CryptResult<String> {
+    let config = config.read().unwrap();
     let v: Value = serde_json::from_str(json)?;
 
     if let Value::Object(obj) = v {
-        let v = encrypt_object(config, "", obj);
+        let v = encrypt_object(&config, "", obj);
         Ok(serde_json::to_string(&v)?)
     } else {
         Err(CryptError::InvalidDocument(
@@ -19,11 +21,12 @@ pub fn encrypt_document(config: &Config, json: &str) -> CryptResult<String> {
 }
 
 #[allow(dead_code)]
-pub fn decrypt_document(config: &Config, json: &str) -> CryptResult<String> {
+pub fn decrypt_document(config: &Arc<RwLock<Box<Config>>>, json: &str) -> CryptResult<String> {
+    let config = config.read().unwrap();
     let v: Value = serde_json::from_str(json)?;
 
     if let Value::Object(obj) = v {
-        let v = decrypt_element(config, "", obj);
+        let v = decrypt_element(&config, "", obj)?;
         Ok(serde_json::to_string(&v)?)
     } else {
         Err(CryptError::InvalidDocument(
@@ -258,7 +261,11 @@ fn encrypt_array<'a>(config: &'a Config, key: &'a str, arr: Vec<Value>) -> Value
     }
 }
 
-fn decrypt_element<'a>(config: &'a Config, key: &'a str, obj: Map<String, Value>) -> Value {
+fn decrypt_element<'a>(
+    config: &'a Config,
+    key: &'a str,
+    obj: Map<String, Value>,
+) -> CryptResult<Value> {
     if is_crypted(&obj) {
         if let Some(value) = obj.get("type") {
             if let Some(obj) = obj.get("crypted_field") {
@@ -271,37 +278,37 @@ fn decrypt_element<'a>(config: &'a Config, key: &'a str, obj: Map<String, Value>
                             "array" => decrypt_array(config, &key, obj),
                             "object" => decrypt_object(config, &key, obj),
                             _ => {
-                                println!(
-                            "[crypt-config][ERROR] Invalid value of `{}.type`, got `{}`, expected one of: `bool`, `number`, `string`, `array`, `object`",
-                            key, value_type
-                        );
-                                Value::Null
+                                let message = format!("Invalid value of `{}.type`, got `{}`, expected one of: `bool`, `number`, `string`, `array`, `object`",
+                            key, value_type);
+                                println!("[crypt-config][ERROR] {}", message);
+                                Err(CryptError::InvalidDocument(message))
                             }
                         }
                     } else {
-                        println!("[crypt-config][ERROR] `{}.type` must be string type", key);
-                        Value::Null
+                        let message = format!("`{}.type` must be string type", key);
+                        println!("[crypt-config][ERROR] {}", message);
+                        Err(CryptError::InvalidDocument(message))
                     }
                 } else {
-                    println!(
-                        "[crypt-config][ERROR] `{}.crypted_fiels` must be object type",
-                        key
-                    );
-                    Value::Null
+                    let message = format!("`{}.crypted_fiels` must be object type", key);
+                    println!("[crypt-config][ERROR] {}", message);
+                    Err(CryptError::InvalidDocument(message))
                 }
             } else {
-                println!(
-                    "[crypt-config][ERROR] Invalid crypted field `{}`, lack of `crypted_field` object",
+                let message = format!(
+                    "Invalid crypted field `{}`, lack of `crypted_field` object",
                     key
                 );
-                Value::Null
+                println!("[crypt-config][ERROR] {}", message);
+                Err(CryptError::InvalidDocument(message))
             }
         } else {
-            println!(
-                "[crypt-config][ERROR] Invalid crypted field `{}`, lack of `type` information",
+            let message = format!(
+                "Invalid crypted field `{}`, lack of `type` information",
                 key
             );
-            Value::Null
+            println!("[crypt-config][ERROR] {}", message);
+            Err(CryptError::InvalidDocument(message))
         }
     } else {
         let mut out = Map::new();
@@ -312,16 +319,26 @@ fn decrypt_element<'a>(config: &'a Config, key: &'a str, obj: Map<String, Value>
                 Value::Bool(val) => out.insert(k, Value::Bool(val)),
                 Value::Number(val) => out.insert(k, Value::Number(val)),
                 Value::String(val) => out.insert(k, Value::String(val)),
-                Value::Array(arr) => out.insert(k, decrypt_array_elements(config, &key, arr)),
-                Value::Object(map) => out.insert(k, decrypt_element(config, &key, map)),
+                Value::Array(arr) => match decrypt_array_elements(config, &key, arr) {
+                    Ok(val) => out.insert(k, val),
+                    Err(err) => return Err(err),
+                },
+                Value::Object(map) => match decrypt_element(config, &key, map) {
+                    Ok(val) => out.insert(k, val),
+                    Err(err) => return Err(err),
+                },
             };
         }
 
-        Value::Object(out)
+        Ok(Value::Object(out))
     }
 }
 
-fn decrypt_array_elements<'a>(config: &'a Config, key: &'a str, arr: Vec<Value>) -> Value {
+fn decrypt_array_elements<'a>(
+    config: &'a Config,
+    key: &'a str,
+    arr: Vec<Value>,
+) -> CryptResult<Value> {
     let mut out = Vec::new();
     for v in arr {
         match v {
@@ -329,88 +346,101 @@ fn decrypt_array_elements<'a>(config: &'a Config, key: &'a str, arr: Vec<Value>)
             Value::Bool(val) => out.push(Value::Bool(val)),
             Value::Number(val) => out.push(Value::Number(val)),
             Value::String(val) => out.push(Value::String(val)),
-            Value::Array(arr) => out.push(decrypt_array_elements(config, &key, arr)),
-            Value::Object(map) => out.push(decrypt_element(config, &key, map)),
+            Value::Array(arr) => match decrypt_array_elements(config, &key, arr) {
+                Ok(val) => out.push(val),
+                Err(err) => return Err(err),
+            },
+            Value::Object(map) => match decrypt_element(config, &key, map) {
+                Ok(val) => out.push(val),
+                Err(err) => return Err(err),
+            },
         };
     }
 
-    Value::Array(out)
+    Ok(Value::Array(out))
 }
 
-fn decrypt_bool<'a>(config: &'a Config, key: &'a str, obj: &Map<String, Value>) -> Value {
-    match get_value(config, key, obj) {
-        Some(string) => {
-            if let Ok(boolean) = bool::from_str(string.as_str()) {
-                Value::Bool(boolean)
-            } else {
-                Value::Null
-            }
+fn decrypt_bool<'a>(
+    config: &'a Config,
+    key: &'a str,
+    obj: &Map<String, Value>,
+) -> CryptResult<Value> {
+    let string = get_value(config, key, obj)?;
+    match bool::from_str(&string) {
+        Ok(boolean) => Ok(Value::Bool(boolean)),
+        Err(_) => {
+            let message = format!("Field `{}` is not a boolean type", key);
+            println!(
+                "[crypt-config][ERROR] {}, the decrypted value is `{}`",
+                message, string
+            );
+            Err(CryptError::InvalidDocument(message))
         }
-        None => Value::Null,
     }
 }
 
-fn decrypt_number<'a>(config: &'a Config, key: &'a str, obj: &Map<String, Value>) -> Value {
-    match get_value(config, key, obj) {
-        Some(string) => {
-            if let Ok(number) = string.parse::<u64>() {
-                Value::Number(Number::from(number))
-            } else if let Ok(number) = string.parse::<i64>() {
-                Value::Number(Number::from(number))
-            } else if let Ok(number) = string.parse::<f64>() {
-                Value::Number(Number::from_f64(number).unwrap())
-            } else {
-                Value::Null
-            }
-        }
-        None => Value::Null,
+fn decrypt_number<'a>(
+    config: &'a Config,
+    key: &'a str,
+    obj: &Map<String, Value>,
+) -> CryptResult<Value> {
+    let string = get_value(config, key, obj)?;
+    if let Ok(number) = string.parse::<u64>() {
+        Ok(Value::Number(Number::from(number)))
+    } else if let Ok(number) = string.parse::<i64>() {
+        Ok(Value::Number(Number::from(number)))
+    } else if let Ok(number) = string.parse::<f64>() {
+        Ok(Value::Number(Number::from_f64(number).unwrap()))
+    } else {
+        let message = format!("Field `{}` is not a number type", key);
+        println!(
+            "[crypt-config][ERROR] {}, the decrypted value is `{}`",
+            message, string
+        );
+        Err(CryptError::InvalidDocument(message))
     }
 }
 
-fn decrypt_string<'a>(config: &'a Config, key: &'a str, obj: &Map<String, Value>) -> Value {
-    match get_value(config, key, obj) {
-        Some(string) => Value::String(string),
-        None => Value::Null,
-    }
+fn decrypt_string<'a>(
+    config: &'a Config,
+    key: &'a str,
+    obj: &Map<String, Value>,
+) -> CryptResult<Value> {
+    let string = get_value(config, key, obj)?;
+    Ok(Value::String(string))
 }
 
-fn decrypt_array<'a>(config: &'a Config, key: &'a str, obj: &Map<String, Value>) -> Value {
+fn decrypt_array<'a>(
+    config: &'a Config,
+    key: &'a str,
+    obj: &Map<String, Value>,
+) -> CryptResult<Value> {
     let key = join(key, "*");
-    match get_value(config, &key, obj) {
-        Some(string) => {
-            let array = serde_json::from_str(&string);
-            match array {
-                Ok(value) => value,
-                Err(err) => {
-                    println!(
-                        "[crypt-config][ERROR] Error occured during deserializing `{}`: {}",
-                        key, err
-                    );
-                    Value::Null
-                }
-            }
+    let string = get_value(config, &key, obj)?;
+    match serde_json::from_str(&string) {
+        Ok(value) => Ok(value),
+        Err(err) => {
+            let message = format!("Error occured during deserializing `{}`: {}", key, err);
+            println!("[crypt-config][ERROR] {}", message);
+            Err(CryptError::InvalidDocument(message))
         }
-        None => Value::Null,
     }
 }
 
-fn decrypt_object<'a>(config: &'a Config, key: &'a str, obj: &Map<String, Value>) -> Value {
+fn decrypt_object<'a>(
+    config: &'a Config,
+    key: &'a str,
+    obj: &Map<String, Value>,
+) -> CryptResult<Value> {
     let key = join(key, "*");
-    match get_value(config, &key, obj) {
-        Some(string) => {
-            let object = serde_json::from_str(&string);
-            match object {
-                Ok(value) => value,
-                Err(err) => {
-                    println!(
-                        "[crypt-config][ERROR] Error occured during deserializing `{}`: {}",
-                        key, err
-                    );
-                    Value::Null
-                }
-            }
+    let string = get_value(config, &key, obj)?;
+    match serde_json::from_str(&string) {
+        Ok(value) => Ok(value),
+        Err(err) => {
+            let message = format!("Error occured during deserializing `{}`: {}", key, err);
+            println!("[crypt-config][ERROR] {}", message);
+            Err(CryptError::InvalidDocument(message))
         }
-        None => Value::Null,
     }
 }
 
@@ -439,29 +469,35 @@ fn crypt_value(cipher_version: &str, salt: &[u8], data: &[u8]) -> Value {
     Value::Object(map)
 }
 
-fn get_value<'a>(config: &'a Config, key: &'a str, obj: &Map<String, Value>) -> Option<String> {
+fn get_value<'a>(
+    config: &'a Config,
+    key: &'a str,
+    obj: &Map<String, Value>,
+) -> CryptResult<String> {
     if let Some((data, salt, version)) = get_data_salt_version(obj) {
         if let Some(cipher) = config.get_cipher(&version, key) {
             match cipher.decrypt_with_salt(&data, &salt) {
-                Ok(string) => Some(string),
+                Ok(string) => Ok(string),
                 Err(err) => {
                     println!(
                         "[crypt-config][ERROR] Unable to decrypt `{}`, error occured: {}",
                         key, err
                     );
-                    None
+                    Err(err)
                 }
             }
         } else {
-            println!(
-                "[crypt-config][ERROR] Unable to find cipher of field `{}` with version: {}",
+            let message = format!(
+                "Unable to find cipher of field `{}` with version: {}",
                 key, version
             );
-            None
+            println!("[crypt-config][ERROR] {}", message);
+            Err(CryptError::CipherNotFound(message))
         }
     } else {
-        println!("[crypt-config][ERROR] Invalid format of crypted_field for field `{}`, expected: `data`, `salt` and `version`", key);
-        None
+        let message = format!("Invalid format of crypted_field for field `{}`, expected: `data`, `salt` and `version`", key);
+        println!("[crypt-config][ERROR] {}", message);
+        Err(CryptError::InvalidDocument(message))
     }
 }
 
@@ -513,6 +549,8 @@ fn join<'a>(a: &'a str, b: &'a str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, RwLock};
+
     use crate::config::Config;
     use crate::config::{CipherConfig, CipherData, HasherConfig, HasherData};
 
@@ -527,6 +565,7 @@ mod tests {
         hasher.insert_configuration("1", hash_config);
         config.insert_hasher("series.*".to_string(), hasher);
 
+        let config = Arc::new(RwLock::new(Box::new(config)));
         let encrypted_json = super::encrypt_document(&config, JSON).unwrap();
         let expected_json = r#"{"active":true,"address":{"city":"New York","country":"USA"},"age":25,"email":"jonny.bravo@cn.com","empty":null,"name":"John","series":{"hashed_field":{"data":"giAS02dOap4MHEx9m5Cl0xIdL37f/QobI29TDyBN0JY=","version":"1"},"type":"array"},"surname":"Bravo"}"#;
 
@@ -542,6 +581,7 @@ mod tests {
         hasher.insert_configuration("1", hash_config);
         config.insert_hasher("active".to_string(), hasher);
 
+        let config = Arc::new(RwLock::new(Box::new(config)));
         let encrypted_json = super::encrypt_document(&config, JSON).unwrap();
         let expected_json = r#"{"active":{"hashed_field":{"data":"IkG35GNCWPPOnXYFLQ64zTNIwBadyLvlHi1JWvAXlfU=","version":"1"},"type":"bool"},"address":{"city":"New York","country":"USA"},"age":25,"email":"jonny.bravo@cn.com","empty":null,"name":"John","series":[1,2,3],"surname":"Bravo"}"#;
 
@@ -557,6 +597,7 @@ mod tests {
         hasher.insert_configuration("2", hash_config);
         config.insert_hasher("age".to_string(), hasher);
 
+        let config = Arc::new(RwLock::new(Box::new(config)));
         let encrypted_json = super::encrypt_document(&config, JSON).unwrap();
         let expected_json = r#"{"active":true,"address":{"city":"New York","country":"USA"},"age":{"hashed_field":{"data":"/6TDu9lIIcx5ux5K1Zyo40K2MsYJ+gZe2LU0HZVp3jA=","version":"2"},"type":"number"},"email":"jonny.bravo@cn.com","empty":null,"name":"John","series":[1,2,3],"surname":"Bravo"}"#;
 
@@ -572,6 +613,7 @@ mod tests {
         hasher.insert_configuration("1", hash_config);
         config.insert_hasher("email".to_string(), hasher);
 
+        let config = Arc::new(RwLock::new(Box::new(config)));
         let encrypted_json = super::encrypt_document(&config, JSON).unwrap();
         let expected_json = r#"{"active":true,"address":{"city":"New York","country":"USA"},"age":25,"email":{"hashed_field":{"data":"zzzknrIcELaK5xDZnDWNnT4JSCseusMX0h2WdBdgTfE=","version":"1"},"type":"string"},"empty":null,"name":"John","series":[1,2,3],"surname":"Bravo"}"#;
 
@@ -587,6 +629,7 @@ mod tests {
         hasher.insert_configuration("5", hash_config);
         config.insert_hasher("address.*".to_string(), hasher);
 
+        let config = Arc::new(RwLock::new(Box::new(config)));
         let encrypted_json = super::encrypt_document(&config, JSON).unwrap();
         let expected_json = r#"{"active":true,"address":{"hashed_field":{"data":"8Gur9ZcF3bgukZQP3mtvQEst0uTG2D50VqlMOyOHTPM=","version":"5"},"type":"object"},"age":25,"email":"jonny.bravo@cn.com","empty":null,"name":"John","series":[1,2,3],"surname":"Bravo"}"#;
 
@@ -609,6 +652,7 @@ mod tests {
         hasher.insert_configuration("1", hash_config);
         config.insert_hasher("address.*".to_string(), hasher);
 
+        let config = Arc::new(RwLock::new(Box::new(config)));
         let encrypted_json = super::encrypt_document(&config, JSON).unwrap();
         let expected_json = r#"{"active":true,"address":{"hashed_field":{"data":"WBlBT6nFvqWJ+1bxbtPAX+H0K/FMAq3FfC9kaZq/CIg=","version":"1"},"type":"object"},"age":25,"email":{"hashed_field":{"data":"rCknP8kn627oZ96uTiR7d+hZTyS8QZImUazpF8ryIxs=","version":"1"},"type":"string"},"empty":null,"name":"John","series":[1,2,3],"surname":"Bravo"}"#;
 
@@ -624,6 +668,7 @@ mod tests {
         cipher.insert_configuration("1", cipher_config);
         config.insert_cipher("series.*".to_string(), cipher);
 
+        let config = Arc::new(RwLock::new(Box::new(config)));
         let encrypted_json = super::encrypt_document(&config, JSON).unwrap();
 
         assert_ne!(JSON, encrypted_json);
@@ -638,6 +683,7 @@ mod tests {
         cipher.insert_configuration("4", cipher_config);
         config.insert_cipher("active".to_string(), cipher);
 
+        let config = Arc::new(RwLock::new(Box::new(config)));
         let encrypted_json = super::encrypt_document(&config, JSON).unwrap();
 
         assert_ne!(JSON, encrypted_json);
@@ -652,6 +698,7 @@ mod tests {
         cipher.insert_configuration("3", cipher_config);
         config.insert_cipher("age".to_string(), cipher);
 
+        let config = Arc::new(RwLock::new(Box::new(config)));
         let encrypted_json = super::encrypt_document(&config, JSON).unwrap();
 
         assert_ne!(JSON, encrypted_json);
@@ -666,6 +713,7 @@ mod tests {
         cipher.insert_configuration("2", cipher_config);
         config.insert_cipher("email".to_string(), cipher);
 
+        let config = Arc::new(RwLock::new(Box::new(config)));
         let encrypted_json = super::encrypt_document(&config, JSON).unwrap();
 
         assert_ne!(JSON, encrypted_json);
@@ -680,6 +728,7 @@ mod tests {
         cipher.insert_configuration("2", cipher_config);
         config.insert_cipher("address.*".to_string(), cipher);
 
+        let config = Arc::new(RwLock::new(Box::new(config)));
         let encrypted_json = super::encrypt_document(&config, JSON).unwrap();
 
         assert_ne!(JSON, encrypted_json);
@@ -701,6 +750,7 @@ mod tests {
         cipher.insert_configuration("7", cipher_config);
         config.insert_cipher("email".to_string(), cipher);
 
+        let config = Arc::new(RwLock::new(Box::new(config)));
         let encrypted_json = super::encrypt_document(&config, JSON).unwrap();
 
         assert_ne!(JSON, encrypted_json);
@@ -722,6 +772,7 @@ mod tests {
         hasher.insert_configuration("4", hash_config);
         config.insert_hasher("address.*".to_string(), hasher);
 
+        let config = Arc::new(RwLock::new(Box::new(config)));
         let encrypted_json = super::encrypt_document(&config, JSON).unwrap();
 
         assert_ne!(JSON, encrypted_json);
@@ -743,6 +794,7 @@ mod tests {
         hasher.insert_configuration("4", hash_config);
         config.insert_hasher("email".to_string(), hasher);
 
+        let config = Arc::new(RwLock::new(Box::new(config)));
         let encrypted_json = super::encrypt_document(&config, JSON).unwrap();
 
         assert_ne!(JSON, encrypted_json);
@@ -757,6 +809,7 @@ mod tests {
         cipher.insert_configuration("5", cipher_config);
         config.insert_cipher("series.*".to_string(), cipher);
 
+        let config = Arc::new(RwLock::new(Box::new(config)));
         let encrypted_json = super::encrypt_document(&config, JSON).unwrap();
         let decrypted_json = super::decrypt_document(&config, &encrypted_json).unwrap();
 
@@ -772,6 +825,7 @@ mod tests {
         cipher.insert_configuration("4", cipher_config);
         config.insert_cipher("active".to_string(), cipher);
 
+        let config = Arc::new(RwLock::new(Box::new(config)));
         let encrypted_json = super::encrypt_document(&config, JSON).unwrap();
         let decrypted_json = super::decrypt_document(&config, &encrypted_json).unwrap();
 
@@ -787,6 +841,7 @@ mod tests {
         cipher.insert_configuration("2", cipher_config);
         config.insert_cipher("age".to_string(), cipher);
 
+        let config = Arc::new(RwLock::new(Box::new(config)));
         let encrypted_json = super::encrypt_document(&config, JSON).unwrap();
         let decrypted_json = super::decrypt_document(&config, &encrypted_json).unwrap();
 
@@ -802,6 +857,7 @@ mod tests {
         cipher.insert_configuration("2", cipher_config);
         config.insert_cipher("address.city".to_string(), cipher);
 
+        let config = Arc::new(RwLock::new(Box::new(config)));
         let encrypted_json = super::encrypt_document(&config, JSON).unwrap();
         let decrypted_json = super::decrypt_document(&config, &encrypted_json).unwrap();
 
@@ -817,6 +873,7 @@ mod tests {
         cipher.insert_configuration("5", cipher_config);
         config.insert_cipher("address.*".to_string(), cipher);
 
+        let config = Arc::new(RwLock::new(Box::new(config)));
         let encrypted_json = super::encrypt_document(&config, JSON).unwrap();
         let decrypted_json = super::decrypt_document(&config, &encrypted_json).unwrap();
 

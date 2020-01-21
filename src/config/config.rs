@@ -1,24 +1,23 @@
 extern crate notify;
 
-use notify::{watcher, DebouncedEvent, RecursiveMode, Watcher};
+use notify::{op, raw_watcher, RecursiveMode, Watcher};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::mpsc;
-use std::time::Duration;
+use std::sync::{Arc, RwLock};
+use std::thread;
 
 use crate::cipher::ICipher;
 use crate::config::{
     generate_cipher_from_config, generate_hasher_from_config, get_cipher_loader,
     get_config_version, get_hasher_loader, CipherConfig, CipherData, HasherConfig, HasherData,
 };
-use crate::convert::{decrypt_document, encrypt_document};
 use crate::error::CryptResult;
 use crate::hasher::IHasher;
 
 pub struct SyncedConfig {
-    receiver: mpsc::Receiver<Box<Config>>,
-    config: Box<Config>,
+    config: Arc<RwLock<Box<Config>>>,
 }
 
 pub struct Config {
@@ -28,59 +27,27 @@ pub struct Config {
 
 impl SyncedConfig {
     #[allow(dead_code)]
-    pub fn new() -> (Box<SyncedConfig>, mpsc::Sender<Box<Config>>) {
-        let (tx, rx) = mpsc::channel::<Box<Config>>();
-        let cfg = Box::new(SyncedConfig {
-            receiver: rx,
-            config: Config::new(),
+    pub fn new(path: PathBuf) -> Arc<SyncedConfig> {
+        let config = Arc::new(RwLock::new(Box::new(Config::new())));
+
+        let ret = Arc::new(SyncedConfig {
+            config: config.clone(),
         });
-
-        (cfg, tx)
+        thread::spawn(move || crypt_config_watcher_and_loader(path, config));
+        ret
     }
 
-    #[allow(dead_code)]
-    pub fn encrypt_document(&mut self, document: &str) -> String {
-        while let Ok(cfg) = self.receiver.try_recv() {
-            self.config = cfg;
-        }
-
-        match encrypt_document(&self.config, &document) {
-            Ok(string) => string,
-            Err(err) => {
-                println!(
-                    "[crypt-config][ERROR] Error occured during encrypting document: {}",
-                    err
-                );
-                document.to_string()
-            }
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn decrypt_document(&mut self, document: &str) -> String {
-        while let Ok(cfg) = self.receiver.try_recv() {
-            self.config = cfg;
-        }
-
-        match decrypt_document(&self.config, &document) {
-            Ok(string) => string,
-            Err(err) => {
-                println!(
-                    "[crypt-config][ERROR] Error occured during decrypting document: {}",
-                    err
-                );
-                document.to_string()
-            }
-        }
+    pub fn get_config(&self) -> Arc<RwLock<Box<Config>>> {
+        self.config.clone()
     }
 }
 
 impl Config {
-    pub fn new() -> Box<Config> {
-        Box::new(Config {
+    pub fn new() -> Config {
+        Config {
             hashers: HashMap::new(),
             ciphers: HashMap::new(),
-        })
+        }
     }
 
     pub fn new_from_path(path: &PathBuf) -> CryptResult<Box<Config>> {
@@ -92,9 +59,9 @@ impl Config {
 
         let mut config = Config::new();
 
-        hasher_loader(config.as_mut(), &content)?;
-        cipher_loader(config.as_mut(), &content)?;
-        Ok(config)
+        hasher_loader(&mut config, &content)?;
+        cipher_loader(&mut config, &content)?;
+        Ok(Box::new(config))
     }
 
     pub fn insert_cipher(&mut self, key: String, val: Box<CipherData>) {
@@ -192,33 +159,58 @@ impl Config {
     }
 }
 
-#[allow(dead_code)]
-pub fn crypt_config_watcher_and_loader(path: PathBuf, sender: mpsc::Sender<Box<Config>>) {
-    let (tx, rx) = mpsc::channel();
-
-    load_new_configuration(&path, &sender);
-
-    let mut watcher = watcher(tx, Duration::from_secs(1)).unwrap();
-    watcher.watch(path, RecursiveMode::NonRecursive).unwrap();
+fn crypt_config_watcher_and_loader(path: PathBuf, config: Arc<RwLock<Box<Config>>>) {
+    load_new_configuration(&path, &config);
 
     loop {
-        match rx.recv() {
-            Ok(event) => match event {
-                DebouncedEvent::Create(path) => load_new_configuration(&path, &sender),
-                DebouncedEvent::Write(path) => load_new_configuration(&path, &sender),
-                _ => (),
-            },
-            Err(e) => println!("watch error: {:?}", e),
+        let (tx, rx) = mpsc::channel();
+        if let Ok(mut watcher) = raw_watcher(tx) {
+            if watcher.watch(&path, RecursiveMode::NonRecursive).is_ok() {
+                loop {
+                    match rx.recv() {
+                        Ok(event) => match event.op {
+                            Ok(operation) => {
+                                let path = event.path.unwrap_or(path.clone());
+                                if operation.contains(op::CREATE) {
+                                    println!("[crypt-config][INFO] Create event on file {:?} was occured - loading new configuration", path);
+                                    load_new_configuration(&path, &config);
+                                } else if operation.contains(op::WRITE) {
+                                    println!("[crypt-config][INFO] Write event on file {:?} was occured - loading new configuration", path);
+                                    load_new_configuration(&path, &config);
+                                } else if operation.contains(op::CLOSE_WRITE) {
+                                    // Ignore close write - this is a followed event after write
+                                } else {
+                                    println!(
+                                        "[crypt-config][INFO] {:?} event was occured on file {:?} - no action was taken",
+                                        &event.op, &path
+                                    );
+                                    break;
+                                }
+                            }
+                            Err(err) => {
+                                println!("[crypt-config][WARNING] Event error occured: {}", err);
+                            }
+                        },
+                        Err(e) => {
+                            println!("watch error: {:?}", e);
+                            break;
+                        }
+                    }
+                }
+            } else {
+                break;
+            }
+        } else {
+            break;
         }
     }
 }
 
-fn load_new_configuration(path: &PathBuf, sender: &mpsc::Sender<Box<Config>>) {
+fn load_new_configuration(path: &PathBuf, config: &Arc<RwLock<Box<Config>>>) {
     match Config::new_from_path(path) {
         Ok(cfg) => {
-            if let Err(err) = sender.send(cfg) {
-                println!("[crypt-config][ERROR] Error occured during sending message to main thread: {:?}", err);
-            }
+            let mut c = config.write().unwrap();
+            *c = cfg;
         }
         Err(err) => println!(
             "[crypt-config][ERROR] Error occured during parsing config file: {:?}",
@@ -234,6 +226,8 @@ mod tests {
     use std::path::PathBuf;
     use std::thread;
     use std::time;
+
+    use crate::convert::{decrypt_document, encrypt_document};
 
     fn get_test_data_path(fname: &str) -> PathBuf {
         let mut path = PathBuf::from(file!());
@@ -291,27 +285,24 @@ mod tests {
 
     #[test]
     fn empty_configuration() {
-        let (mut config, sender) = super::SyncedConfig::new();
-
         let path = get_test_data_path("empty1.json");
-        thread::spawn(move || super::crypt_config_watcher_and_loader(path, sender));
+        let config = super::SyncedConfig::new(path);
 
         let one_sec = time::Duration::from_secs(1);
         thread::sleep(one_sec);
 
         let json = r#"{"email":"johny.bravo@cn.com"}"#;
 
-        let encrypted_json = config.encrypt_document(json);
+        let config = config.get_config();
+        let encrypted_json = encrypt_document(&config, json).unwrap();
 
         assert_eq!(json, encrypted_json);
     }
 
     #[test]
     fn autoloaded_configuration() {
-        let (mut config, sender) = super::SyncedConfig::new();
-
         let path = get_test_data_path("empty2.json");
-        thread::spawn(move || super::crypt_config_watcher_and_loader(path, sender));
+        let config = super::SyncedConfig::new(path);
 
         let sec = time::Duration::from_secs(1);
         thread::sleep(sec);
@@ -323,8 +314,9 @@ mod tests {
 
         let json = r#"{"email":"johny.bravo@cn.com"}"#;
 
-        let encrypted_json = config.encrypt_document(json);
-        let decrypted_json = config.decrypt_document(&encrypted_json);
+        let config = config.get_config();
+        let encrypted_json = encrypt_document(&config, json).unwrap();
+        let decrypted_json = decrypt_document(&config, &encrypted_json).unwrap();
 
         assert_ne!(json, encrypted_json);
         assert_eq!(encrypted_json, decrypted_json);
@@ -334,23 +326,25 @@ mod tests {
 
     #[test]
     fn autoloaded_cipher_configuration() {
-        let (mut config, sender) = super::SyncedConfig::new();
-
         let path = get_test_data_path("empty3.json");
-        thread::spawn(move || super::crypt_config_watcher_and_loader(path, sender));
+        let config = super::SyncedConfig::new(path);
 
         let sec = time::Duration::from_secs(1);
         thread::sleep(sec);
+
+        let json = r#"{"email":"johny.bravo@cn.com"}"#;
+
+        let config = config.get_config();
+        let encrypted_json = encrypt_document(&config, json).unwrap();
+        assert_eq!(json, encrypted_json);
 
         write_to_empty_file("empty3.json", EMAIL_CIPHER.as_bytes());
 
         thread::sleep(sec);
         thread::sleep(sec);
 
-        let json = r#"{"email":"johny.bravo@cn.com"}"#;
-
-        let encrypted_json = config.encrypt_document(json);
-        let decrypted_json = config.decrypt_document(&encrypted_json);
+        let encrypted_json = encrypt_document(&config, json).unwrap();
+        let decrypted_json = decrypt_document(&config, &encrypted_json).unwrap();
 
         assert_ne!(json, encrypted_json);
         assert_eq!(json, decrypted_json);

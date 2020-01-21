@@ -116,7 +116,7 @@ mod tests {
         let version = get_config_version(&content).unwrap();
         let hasher_loader = get_hasher_loader(&version);
 
-        hasher_loader(config.as_mut(), &content).unwrap();
+        hasher_loader(&mut config, &content).unwrap();
 
         assert!(config.is_hasher_exist("email"));
         assert_eq!("2.0", config.get_hasher_latest_version("email"));
