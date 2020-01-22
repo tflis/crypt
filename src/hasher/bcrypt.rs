@@ -5,62 +5,59 @@ use crypto::bcrypt_pbkdf::bcrypt_pbkdf;
 use crate::hasher::IHasher;
 
 pub struct BcryptHasher {
-    rounds: u32,
-    salt: Vec<u8>,
+  rounds: u32,
+  salt:   Vec<u8>
 }
 
 impl IHasher for BcryptHasher {
-    fn encrypt(&self, password: &str) -> Vec<u8> {
-        let mut output = vec![0u8; 32];
-        bcrypt_pbkdf(password.as_bytes(), &self.salt, self.rounds, &mut output);
+  fn encrypt(&self, password: &str) -> Vec<u8> {
+    let mut output = vec![0u8; 32];
+    bcrypt_pbkdf(password.as_bytes(), &self.salt, self.rounds, &mut output);
 
-        output.to_vec()
-    }
+    output.to_vec()
+  }
 
-    fn verify(&self, encrypted: &[u8], password: &str) -> bool {
-        let mut output = vec![0u8; 32];
-        bcrypt_pbkdf(password.as_bytes(), &self.salt, self.rounds, &mut output);
+  fn verify(&self, encrypted: &[u8], password: &str) -> bool {
+    let mut output = vec![0u8; 32];
+    bcrypt_pbkdf(password.as_bytes(), &self.salt, self.rounds, &mut output);
 
-        output == encrypted
-    }
+    output == encrypted
+  }
 
-    fn set_salt(&mut self, salt: &[u8]) {
-        self.salt = salt.to_vec();
-    }
+  fn set_salt(&mut self, salt: &[u8]) {
+    self.salt = salt.to_vec();
+  }
 }
 
 impl BcryptHasher {
-    #[allow(dead_code)]
-    pub fn new(rounds: u32, salt: &[u8]) -> BcryptHasher {
-        BcryptHasher {
-            rounds: rounds,
-            salt: salt.to_vec(),
-        }
-    }
+  #[allow(dead_code)]
+  pub fn new(rounds: u32, salt: &[u8]) -> BcryptHasher {
+    BcryptHasher { rounds: rounds, salt: salt.to_vec() }
+  }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::hasher::IHasher;
+  use crate::hasher::IHasher;
 
-    #[test]
-    fn encode_verify() {
-        let rounds = 10;
-        let salt = [10u8, 16];
+  #[test]
+  fn encode_verify() {
+    let rounds = 10;
+    let salt = [10u8, 16];
 
-        let password = "password";
-        let password2 = "password2";
+    let password = "password";
+    let password2 = "password2";
 
-        let mut hasher = super::BcryptHasher::new(rounds, &salt);
+    let mut hasher = super::BcryptHasher::new(rounds, &salt);
 
-        let hash = hasher.encrypt(password);
+    let hash = hasher.encrypt(password);
 
-        assert!(hasher.verify(&hash, password));
-        assert!(!hasher.verify(&hash, password2));
+    assert!(hasher.verify(&hash, password));
+    assert!(!hasher.verify(&hash, password2));
 
-        let salt = [11u8, 16];
-        hasher.set_salt(&salt);
+    let salt = [11u8, 16];
+    hasher.set_salt(&salt);
 
-        assert!(!hasher.verify(&hash, password));
-    }
+    assert!(!hasher.verify(&hash, password));
+  }
 }

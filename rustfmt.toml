@@ -1,0 +1,15 @@
+brace_style = "PreferSameLine"
+empty_item_single_line = false
+enum_discrim_align_threshold = 20
+struct_field_align_threshold = 20
+match_arm_align_threshold = 10
+max_width = 160
+fn_args_layout = "Compressed"
+imports_layout = "Horizontal"
+reorder_impl_items = true
+tab_spaces = 2
+trailing_comma = "Never"
+
+use_small_heuristics = "Max"
+use_try_shorthand = true
+where_single_line = true
