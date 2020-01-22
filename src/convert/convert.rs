@@ -1060,7 +1060,9 @@ mod tests {
     let query = r#"{"email": {"$eq":"jonny.bravo@cn.com"}}"#;
     let new_query = super::modify_find_query(&config, &query).unwrap();
 
-    assert_eq!(r#"{"email.hashed_field.data":{"$in":["zzzknrIcELaK5xDZnDWNnT4JSCseusMX0h2WdBdgTfE=","S64dayjXpy3SBhgmirr9Umanb3VWT4u3JYkRKNamJAA="]}}"#, new_query);
+    assert!(new_query.starts_with(r#"{"email.hashed_field.data":{"$in":["#));
+    assert!(new_query.contains("zzzknrIcELaK5xDZnDWNnT4JSCseusMX0h2WdBdgTfE="));
+    assert!(new_query.contains("S64dayjXpy3SBhgmirr9Umanb3VWT4u3JYkRKNamJAA="));
   }
 
   #[test]
@@ -1087,6 +1089,8 @@ mod tests {
     let query = r#"{"email": {"$ne":"jonny.bravo@cn.com"}}"#;
     let new_query = super::modify_find_query(&config, &query).unwrap();
 
-    assert_eq!(r#"{"email.hashed_field.data":{"$nin":["zzzknrIcELaK5xDZnDWNnT4JSCseusMX0h2WdBdgTfE=","S64dayjXpy3SBhgmirr9Umanb3VWT4u3JYkRKNamJAA="]}}"#, new_query);
+    assert!(new_query.starts_with(r#"{"email.hashed_field.data":{"$nin":["#));
+    assert!(new_query.contains("zzzknrIcELaK5xDZnDWNnT4JSCseusMX0h2WdBdgTfE="));
+    assert!(new_query.contains("S64dayjXpy3SBhgmirr9Umanb3VWT4u3JYkRKNamJAA="));
   }
 }
