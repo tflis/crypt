@@ -13,4 +13,3 @@ trailing_comma = "Never"
 use_small_heuristics = "Max"
 use_try_shorthand = true
 where_single_line = true
-wrap_comments = true
