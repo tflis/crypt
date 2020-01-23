@@ -499,31 +499,88 @@ fn hash_operation(cfg: &Config, vers: &Vec<&String>, key: &String, obj: Map<Stri
   for (op, val) in obj {
     match op.as_str() {
       "$eq" => match val {
-        Value::Null => out.insert(op.clone(), Value::Null),
+        Value::Null => {
+          out.insert(op.clone(), Value::Null);
+        }
         Value::Bool(val) => {
           let val = hash_all_versions(&cfg, &vers, &key, val.to_string(), "$in");
-          out.insert(op.clone(), val)
+          match val {
+            Value::Object(map) => {
+              out.extend(map.into_iter());
+            }
+            _ => {
+              out.insert(op.clone(), val);
+            }
+          };
         }
         Value::Number(val) => {
           let val = val.as_f64().unwrap().to_string();
           let val = hash_all_versions(&cfg, &vers, &key, val, "$in");
-          out.insert(op.clone(), val)
+          match val {
+            Value::Object(map) => {
+              out.extend(map.into_iter());
+            }
+            _ => {
+              out.insert(op.clone(), val);
+            }
+          };
         }
         Value::String(val) => {
           let val = hash_all_versions(&cfg, &vers, &key, val, "$in");
-          out.insert(op.clone(), val)
+          match val {
+            Value::Object(map) => {
+              out.extend(map.into_iter());
+            }
+            _ => {
+              out.insert(op.clone(), val);
+            }
+          };
         }
-        _ => out.insert(op.clone(), val)
+        _ => {
+          out.insert(op.clone(), val);
+        }
       },
       "$ne" => match val {
-        Value::Null => out.insert(op.clone(), Value::Null),
-        Value::Bool(val) => out.insert(op.clone(), hash_all_versions(&cfg, &vers, &key, val.to_string(), "$nin")),
+        Value::Null => {
+          out.insert(op.clone(), Value::Null);
+        }
+        Value::Bool(val) => {
+          let val = hash_all_versions(&cfg, &vers, &key, val.to_string(), "$nin");
+          match val {
+            Value::Object(map) => {
+              out.extend(map.into_iter());
+            }
+            _ => {
+              out.insert(op.clone(), val);
+            }
+          };
+        }
         Value::Number(val) => {
           let val = val.as_f64().unwrap().to_string();
-          out.insert(op.clone(), hash_all_versions(&cfg, &vers, &key, val, "$nin"))
+          let val = hash_all_versions(&cfg, &vers, &key, val, "$nin");
+          match val {
+            Value::Object(map) => {
+              out.extend(map.into_iter());
+            }
+            _ => {
+              out.insert(op.clone(), val);
+            }
+          };
         }
-        Value::String(val) => out.insert(op.clone(), hash_all_versions(&cfg, &vers, &key, val, "$nin")),
-        _ => out.insert(op.clone(), val)
+        Value::String(val) => {
+          let val = hash_all_versions(&cfg, &vers, &key, val, "$nin");
+          match val {
+            Value::Object(map) => {
+              out.extend(map.into_iter());
+            }
+            _ => {
+              out.insert(op.clone(), val);
+            }
+          };
+        }
+        _ => {
+          out.insert(op.clone(), val);
+        }
       },
       "$in" | "$nin" => match val {
         Value::Array(arr) => {
@@ -548,13 +605,15 @@ fn hash_operation(cfg: &Config, vers: &Vec<&String>, key: &String, obj: Map<Stri
               _ => out_arr.push(hashed_val)
             };
           }
-          out.insert(op.clone(), Value::Array(out_arr))
+          out.insert(op.clone(), Value::Array(out_arr));
         }
         _ => return Err(CryptError::InvalidQuery(format!("`$in` operation requires object as a value")))
       },
       "$not" => match val {
         Value::Object(obj) => match hash_operation(cfg, vers, &key, obj) {
-          Ok(val) => out.insert(op.clone(), val),
+          Ok(val) => {
+            out.insert(op.clone(), val);
+          }
           Err(err) => return Err(err)
         },
         _ => return Err(CryptError::InvalidQuery(format!("`$not` operation requires object as a value")))
@@ -975,5 +1034,63 @@ mod tests {
     assert!(new_query.contains("S64dayjXpy3SBhgmirr9Umanb3VWT4u3JYkRKNamJAA="));
     assert!(new_query.contains("EXzdYiTBuBjW2bmiPlCBkQnmVUpzkKTbM4HN9SDSXsI="));
     assert!(new_query.contains("WoGwQEvQWrIvdC0EfVSiyvdmcC5kKT+OzpeEI2wOb9U="));
+  }
+
+  #[test]
+  fn eq_query_single_string_field_two_versions() {
+    let mut config = Config::new();
+    let mut hasher = Box::new(HasherData::new());
+
+    let salt = [10u8; 16].to_vec();
+    let hash_config = Box::new(HasherConfig::new("bcrypt".to_string(), 10, salt));
+    hasher.insert_configuration("1", hash_config);
+
+    let salt = [12u8; 16].to_vec();
+    let hash_config = Box::new(HasherConfig::new("pbkdf2".to_string(), 5, salt));
+    hasher.insert_configuration("2", hash_config);
+
+    config.insert_hasher("email".to_string(), hasher);
+
+    let config = Arc::new(RwLock::new(Box::new(config)));
+    let encrypted_json = super::encrypt_document(&config, JSON).unwrap();
+    let expected_json = r#"{"active":true,"address":{"city":"New York","country":"USA"},"age":25,"email":{"hashed_field":{"data":"S64dayjXpy3SBhgmirr9Umanb3VWT4u3JYkRKNamJAA=","version":"2"},"type":"string"},"empty":null,"name":"John","series":[1,2,3],"surname":"Bravo"}"#;
+
+    assert_eq!(expected_json, encrypted_json);
+
+    let query = r#"{"email": {"$eq":"jonny.bravo@cn.com"}}"#;
+    let new_query = super::modify_find_query(&config, &query).unwrap();
+
+    assert!(new_query.starts_with(r#"{"email.hashed_field.data":{"$in":["#));
+    assert!(new_query.contains("zzzknrIcELaK5xDZnDWNnT4JSCseusMX0h2WdBdgTfE="));
+    assert!(new_query.contains("S64dayjXpy3SBhgmirr9Umanb3VWT4u3JYkRKNamJAA="));
+  }
+
+  #[test]
+  fn ne_query_single_string_field_two_versions() {
+    let mut config = Config::new();
+    let mut hasher = Box::new(HasherData::new());
+
+    let salt = [10u8; 16].to_vec();
+    let hash_config = Box::new(HasherConfig::new("bcrypt".to_string(), 10, salt));
+    hasher.insert_configuration("1", hash_config);
+
+    let salt = [12u8; 16].to_vec();
+    let hash_config = Box::new(HasherConfig::new("pbkdf2".to_string(), 5, salt));
+    hasher.insert_configuration("2", hash_config);
+
+    config.insert_hasher("email".to_string(), hasher);
+
+    let config = Arc::new(RwLock::new(Box::new(config)));
+    let encrypted_json = super::encrypt_document(&config, JSON).unwrap();
+    let expected_json = r#"{"active":true,"address":{"city":"New York","country":"USA"},"age":25,"email":{"hashed_field":{"data":"S64dayjXpy3SBhgmirr9Umanb3VWT4u3JYkRKNamJAA=","version":"2"},"type":"string"},"empty":null,"name":"John","series":[1,2,3],"surname":"Bravo"}"#;
+
+    assert_eq!(expected_json, encrypted_json);
+
+    let query = r#"{"email": {"$ne":"jonny.bravo@cn.com"}}"#;
+    let new_query = super::modify_find_query(&config, &query).unwrap();
+
+    assert!(new_query.starts_with(r#"{"email.hashed_field.data":{"$nin":["#));
+    assert!(new_query.contains("zzzknrIcELaK5xDZnDWNnT4JSCseusMX0h2WdBdgTfE="));
+    assert!(new_query.contains("S64dayjXpy3SBhgmirr9Umanb3VWT4u3JYkRKNamJAA="));
   }
 }
