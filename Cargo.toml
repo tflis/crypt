@@ -2,7 +2,7 @@
 name = "crypt-config"
 description = "A crypt module that encrypt/decrypt json data based on the configuration. This might be used as a layer before saving data in Mongo DB or after fetching the data from the DB in order to decrypt them."
 license = "MIT"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["Tomasz Flis <tflis84@gmail.com>"]
 edition = "2018"
 
